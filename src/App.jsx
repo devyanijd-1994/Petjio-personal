@@ -8,6 +8,8 @@ import Services from './pages/Services'
 import UserManagement from './pages/UserManagement'
 import VendorManagement from './pages/VendorManagement'
 import ServiceFormManagement from './pages/ServiceFormManagement'
+import ServiceRegistrations from './pages/ServiceRegistrations'
+import WalletManagement from './pages/WalletManagement'
 import Profile from './pages/Profile'
 
 function App() {
@@ -63,6 +65,26 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <ServiceFormManagement />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/service-registrations"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <ServiceRegistrations />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/wallet"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <WalletManagement />
                 </Layout>
               </ProtectedRoute>
             }

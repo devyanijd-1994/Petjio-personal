@@ -1545,10 +1545,11 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
   const [subServiceForms, setSubServiceForms] = useState({})
   const [sections, setSections] = useState([])
   const [fields, setFields] = useState([])
-  const [newField, setNewField] = useState({ label: '', fieldKey: '', type: 'text', isRequired: false, placeholder: '', helpText: '', order: '', options: [], sectionId: '' })
+  const [newField, setNewField] = useState({ label: '', fieldKey: '', type: 'text', isRequired: false, placeholder: '', helpText: '', order: '', options: [], sectionId: '', subServiceId: '' })
   const [newOption, setNewOption] = useState('')
-  const [newSection, setNewSection] = useState({ title: '', description: '', order: '' })
+  const [newSection, setNewSection] = useState({ title: '', description: '', order: '', subServiceId: '' })
   const [newSubService, setNewSubService] = useState({ name: '', description: '' })
+  const [selectedSubService, setSelectedSubService] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [categoryError, setCategoryError] = useState('')
@@ -1578,6 +1579,50 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
     validateCategory(selectedCategoryId)
   }
 
+  // Helper function to reset form state when sub-services toggle
+  const handleSubServicesToggle = (enabled) => {
+    setHasSubServices(enabled)
+    if (enabled) {
+      // Clear existing sections and fields when enabling sub-services
+      setSections([])
+      setFields([])
+      setSelectedSubService('')
+      // Reset new field and section forms
+      setNewField({ 
+        label: '', 
+        fieldKey: '', 
+        type: 'text', 
+        isRequired: false, 
+        placeholder: '', 
+        helpText: '', 
+        order: '', 
+        options: [], 
+        sectionId: '', 
+        subServiceId: ''
+      })
+      setNewSection({ title: '', description: '', order: '', subServiceId: '' })
+    } else {
+      // Clear sub-services when disabling
+      setSubServices([])
+      setSubServiceForms({})
+      setSelectedSubService('')
+      // Reset new field and section forms with selected sub-service
+      setNewField({ 
+        label: '', 
+        fieldKey: '', 
+        type: 'text', 
+        isRequired: false, 
+        placeholder: '', 
+        helpText: '', 
+        order: '', 
+        options: [], 
+        sectionId: '', 
+        subServiceId: ''
+      })
+      setNewSection({ title: '', description: '', order: '', subServiceId: '' })
+    }
+  }
+
   // Sub-services management
   const addSubService = () => {
     if (!newSubService.name.trim()) return
@@ -1600,6 +1645,11 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
       }
     })
     
+    // Auto-select the first sub-service if none selected
+    if (!selectedSubService) {
+      setSelectedSubService(subServiceId)
+    }
+    
     setNewSubService({ name: '', description: '' })
   }
 
@@ -1610,21 +1660,42 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
     const updatedForms = { ...subServiceForms }
     delete updatedForms[subServiceId]
     setSubServiceForms(updatedForms)
+    
+    // Remove sections and fields for this sub-service
+    setSections(sections.filter(s => s.subServiceId !== subServiceId))
+    setFields(fields.filter(f => f.subServiceId !== subServiceId))
+    
+    // Update selected sub-service if the removed one was selected
+    if (selectedSubService === subServiceId) {
+      const remainingSubServices = subServices.filter(s => s.id !== subServiceId)
+      setSelectedSubService(remainingSubServices.length > 0 ? remainingSubServices[0].id : '')
+    }
   }
 
   // Sections management
   const addSection = () => {
     if (!newSection.title.trim()) return
+    
+    // If sub-services are enabled, require a sub-service selection
+    if (hasSubServices && !newSection.subServiceId) {
+      setError('Please select a sub-service for this section')
+      return
+    }
+    
     const sectionId = `section_${Date.now()}`
     const sectionOrder = newSection.order !== '' ? newSection.order : sections.length + 1
     
-    setSections([...sections, { 
+    const newSectionObj = { 
       id: sectionId, 
       title: newSection.title, 
       description: newSection.description,
-      order: sectionOrder 
-    }])
-    setNewSection({ title: '', description: '', order: '' })
+      order: sectionOrder,
+      subServiceId: hasSubServices ? newSection.subServiceId : null
+    }
+    
+    setSections([...sections, newSectionObj])
+    setNewSection({ title: '', description: '', order: '', subServiceId: hasSubServices ? selectedSubService : '' })
+    setError('')
   }
 
   const removeSection = (sectionId) => {
@@ -1641,12 +1712,37 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
       return
     }
     
+    // If sub-services are enabled, require a sub-service selection
+    if (hasSubServices && !newField.subServiceId) {
+      setError('Please select a sub-service for this field')
+      return
+    }
+    
     // Use manual order if provided, otherwise use automatic order
     const fieldOrder = newField.order !== '' ? newField.order : fields.length + 1
     
-    setFields([...fields, { ...newField, order: fieldOrder, id: `new_${Date.now()}` }])
-    setNewField({ label: '', fieldKey: '', type: 'text', isRequired: false, placeholder: '', helpText: '', order: '', options: [], sectionId: '' })
+    const newFieldObj = { 
+      ...newField, 
+      order: fieldOrder, 
+      id: `new_${Date.now()}`,
+      subServiceId: hasSubServices ? newField.subServiceId : null
+    }
+    
+    setFields([...fields, newFieldObj])
+    setNewField({ 
+      label: '', 
+      fieldKey: '', 
+      type: 'text', 
+      isRequired: false, 
+      placeholder: '', 
+      helpText: '', 
+      order: '', 
+      options: [], 
+      sectionId: '', 
+      subServiceId: hasSubServices ? selectedSubService : ''
+    })
     setNewOption('')
+    setError('')
   }
 
   const removeField = (index) => {
@@ -1681,19 +1777,63 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
         hasSubServices,
         subServices: hasSubServices ? subServices : [],
         subServiceForms: hasSubServices ? subServiceForms : {},
-        formSections: (!hasSubServices && sections.length > 0) ? sections.map(section => ({
-          sectionTitle: section.title,
-          sectionDescription: section.description,
-          sectionOrder: section.order,
-          sectionFields: fields
-            .filter(f => f.sectionId === section.id)
+      }
+
+      if (hasSubServices) {
+        // For sub-services, organize sections and fields by sub-service
+        const subServiceFormSections = {}
+        
+        subServices.forEach(subService => {
+          const subServiceSections = sections
+            .filter(s => s.subServiceId === subService.id)
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .map(section => ({
+              sectionTitle: section.title,
+              sectionDescription: section.description,
+              sectionOrder: section.order,
+              sectionFields: fields
+                .filter(f => f.sectionId === section.id && f.subServiceId === subService.id)
+                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                .map((f, i) => ({ ...f, fieldOrder: f.order || i + 1 }))
+            }))
+          
+          // Add fields not assigned to any section for this sub-service
+          const unassignedFields = fields
+            .filter(f => !f.sectionId && f.subServiceId === subService.id)
             .sort((a, b) => (a.order || 0) - (b.order || 0))
             .map((f, i) => ({ ...f, fieldOrder: f.order || i + 1 }))
-        })) : undefined,
-        // Fallback to legacy format if no sections and no sub-services
-        fields: (!hasSubServices && sections.length === 0) ? fields
-          .sort((a, b) => (a.order || 0) - (b.order || 0))
-          .map((f, i) => ({ ...f, order: f.order || i + 1 })) : undefined
+          
+          if (unassignedFields.length > 0) {
+            subServiceSections.push({
+              sectionTitle: 'Other Fields',
+              sectionDescription: 'Additional fields for this service',
+              sectionOrder: subServiceSections.length + 1,
+              sectionFields: unassignedFields
+            })
+          }
+          
+          subServiceFormSections[subService.id] = subServiceSections
+        })
+        
+        formData.subServiceFormSections = subServiceFormSections
+      } else {
+        // Regular form without sub-services
+        if (sections.length > 0) {
+          formData.formSections = sections.map(section => ({
+            sectionTitle: section.title,
+            sectionDescription: section.description,
+            sectionOrder: section.order,
+            sectionFields: fields
+              .filter(f => f.sectionId === section.id)
+              .sort((a, b) => (a.order || 0) - (b.order || 0))
+              .map((f, i) => ({ ...f, fieldOrder: f.order || i + 1 }))
+          }))
+        } else {
+          // Fallback to legacy format if no sections
+          formData.fields = fields
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .map((f, i) => ({ ...f, order: f.order || i + 1 }))
+        }
       }
       
       await onSave(formData)
@@ -1751,7 +1891,7 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
                 type="checkbox" 
                 id="hasSubServices" 
                 checked={hasSubServices} 
-                onChange={e => setHasSubServices(e.target.checked)} 
+                onChange={e => handleSubServicesToggle(e.target.checked)} 
                 className="rounded" 
               />
               <label htmlFor="hasSubServices" className="text-sm font-medium text-gray-700">
@@ -1788,233 +1928,334 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
                 </div>
 
                 {subServices.length > 0 && (
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {subServices.map((subService, i) => (
-                      <div key={subService.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded text-xs font-mono">
-                              #{i + 1}
-                            </span>
-                            <span className="text-gray-800 font-medium">{subService.name}</span>
-                            {subService.description && (
-                              <span className="text-gray-500 text-xs">- {subService.description}</span>
-                            )}
+                  <>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {subServices.map((subService, i) => (
+                        <div key={subService.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded text-xs font-mono">
+                                #{i + 1}
+                              </span>
+                              <span className="text-gray-800 font-medium">{subService.name}</span>
+                              {subService.description && (
+                                <span className="text-gray-500 text-xs">- {subService.description}</span>
+                              )}
+                            </div>
+                            <button 
+                              type="button" 
+                              onClick={() => removeSubService(subService.id)} 
+                              className="text-red-400 hover:text-red-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
-                          <button 
-                            type="button" 
-                            onClick={() => removeSubService(subService.id)} 
-                            className="text-red-400 hover:text-red-600"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    
+                    {/* Sub-service selector for sections and fields */}
+                    <div className="border-t pt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Sub-Service to Add Sections/Fields
+                      </label>
+                      <select 
+                        value={selectedSubService} 
+                        onChange={e => {
+                          const newSubServiceId = e.target.value
+                          setSelectedSubService(newSubServiceId)
+                          // Update new field and section forms with selected sub-service
+                          setNewField(prev => ({ ...prev, subServiceId: newSubServiceId }))
+                          setNewSection(prev => ({ ...prev, subServiceId: newSubServiceId }))
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select a sub-service</option>
+                        {subServices.map(subService => (
+                          <option key={subService.id} value={subService.id}>{subService.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
               </div>
             )}
           </div>
 
-          {/* Add Sections */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">Form Sections ({sections.length})</h3>
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-3">
-              <div className="grid grid-cols-3 gap-2">
-                <input 
-                  value={newSection.title}
-                  onChange={e => setNewSection({ ...newSection, title: e.target.value })}
-                  placeholder="Section title *"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
-                />
-                <input 
-                  value={newSection.description}
-                  onChange={e => setNewSection({ ...newSection, description: e.target.value })}
-                  placeholder="Description (optional)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
-                />
-                <input 
-                  type="number"
-                  value={newSection.order}
-                  onChange={e => setNewSection({ ...newSection, order: parseInt(e.target.value) || '' })}
-                  placeholder="Order (e.g. 1)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
-                />
-              </div>
-              <div className="flex justify-end">
-                <button 
-                  type="button" 
-                  onClick={addSection}
-                  disabled={!newSection.title.trim()}
-                  className="bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-sm flex items-center space-x-1"
-                >
-                  <Plus className="w-3 h-3" /><span>Add Section</span>
-                </button>
+          {/* Show message when sub-services are enabled but none selected */}
+          {hasSubServices && !selectedSubService && subServices.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center space-x-2">
+                <div className="text-yellow-600">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-yellow-800">Select a Sub-Service</h4>
+                  <p className="text-sm text-yellow-700">Please select a sub-service above to add sections and fields specific to that service type.</p>
+                </div>
               </div>
             </div>
+          )}
 
-            {sections.length > 0 && (
-              <div className="space-y-1 max-h-32 overflow-y-auto mb-4">
-                {sections
-                  .sort((a, b) => (a.order || 0) - (b.order || 0))
-                  .map((section, i) => (
-                  <div key={section.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded text-xs font-mono">
-                          #{section.order || i + 1}
-                        </span>
-                        <span className="text-gray-800 font-medium">{section.title}</span>
-                        {section.description && (
-                          <span className="text-gray-500 text-xs">- {section.description}</span>
-                        )}
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => removeSection(section.id)} 
-                        className="text-red-400 hover:text-red-600"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Add Fields */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">Form Fields ({fields.length})</h3>
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-3">
-              <div className="grid grid-cols-3 gap-2">
-                <input value={newField.label}
-                  onChange={e => setNewField({ ...newField, label: e.target.value, fieldKey: autoKey(e.target.value) })}
-                  placeholder="Label *"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                <input value={newField.fieldKey}
-                  onChange={e => setNewField({ ...newField, fieldKey: e.target.value })}
-                  placeholder="Field key *"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                <input 
-                  type="number"
-                  value={newField.order}
-                  onChange={e => setNewField({ ...newField, order: parseInt(e.target.value) || '' })}
-                  placeholder="Order (e.g. 1)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <select value={newField.type} onChange={e => setNewField({ ...newField, type: e.target.value, options: e.target.value === 'dropdown' || e.target.value === 'multi_select' ? newField.options : [] })}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                  {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-                <select 
-                  value={newField.sectionId} 
-                  onChange={e => setNewField({ ...newField, sectionId: e.target.value })}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">No Section</option>
-                  {sections
-                    .sort((a, b) => (a.order || 0) - (b.order || 0))
-                    .map(section => (
-                    <option key={section.id} value={section.id}>{section.title}</option>
-                  ))}
-                </select>
-                <input value={newField.placeholder} onChange={e => setNewField({ ...newField, placeholder: e.target.value })}
-                  placeholder="Placeholder (optional)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <input
-                  value={newField.helpText}
-                  onChange={e => setNewField({ ...newField, helpText: e.target.value })}
-                  placeholder="Help text (optional)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {(newField.type === 'dropdown' || newField.type === 'multi_select') && (
-                <div className="border-t pt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
-                  <div className="flex space-x-2 mb-2">
-                    <input value={newOption} onChange={e => setNewOption(e.target.value)}
-                      placeholder="Add option"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                    <button type="button" onClick={addOption}
-                      disabled={!newOption.trim()}
-                      className="bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-2 rounded-lg text-sm">
-                      Add
-                    </button>
-                  </div>
-                  {newField.options.length > 0 && (
-                    <div className="space-y-1">
-                      {newField.options.map((option, i) => (
-                        <div key={i} className="flex items-center justify-between bg-white border border-gray-200 rounded px-2 py-1 text-sm">
-                          <span>{option}</span>
-                          <button type="button" onClick={() => removeOption(i)} className="text-red-400 hover:text-red-600">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
+          {/* Add Sections */}
+          {(!hasSubServices || selectedSubService) && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                Form Sections ({hasSubServices ? sections.filter(s => s.subServiceId === selectedSubService).length : sections.length})
+                {hasSubServices && selectedSubService && (
+                  <span className="text-purple-600 ml-2">
+                    for {subServices.find(s => s.id === selectedSubService)?.name}
+                  </span>
+                )}
+              </h3>
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <input 
+                    value={newSection.title}
+                    onChange={e => setNewSection({ ...newSection, title: e.target.value })}
+                    placeholder="Section title *"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
+                  />
+                  <input 
+                    value={newSection.description}
+                    onChange={e => setNewSection({ ...newSection, description: e.target.value })}
+                    placeholder="Description (optional)"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
+                  />
+                  <input 
+                    type="number"
+                    value={newSection.order}
+                    onChange={e => setNewSection({ ...newSection, order: parseInt(e.target.value) || '' })}
+                    placeholder="Order (e.g. 1)"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" 
+                  />
+                </div>
+                {hasSubServices && (
+                  <div>
+                    <select 
+                      value={newSection.subServiceId}
+                      onChange={e => setNewSection({ ...newSection, subServiceId: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Sub-Service *</option>
+                      {subServices.map(subService => (
+                        <option key={subService.id} value={subService.id}>{subService.name}</option>
                       ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <button 
+                    type="button" 
+                    onClick={addSection}
+                    disabled={!newSection.title.trim() || (hasSubServices && !newSection.subServiceId)}
+                    className="bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-sm flex items-center space-x-1"
+                  >
+                    <Plus className="w-3 h-3" /><span>Add Section</span>
+                  </button>
+                </div>
+              </div>
+
+              {sections.filter(s => hasSubServices ? s.subServiceId === selectedSubService : true).length > 0 && (
+                <div className="space-y-1 max-h-32 overflow-y-auto mb-4">
+                  {sections
+                    .filter(s => hasSubServices ? s.subServiceId === selectedSubService : true)
+                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                    .map((section, i) => (
+                    <div key={section.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded text-xs font-mono">
+                            #{section.order || i + 1}
+                          </span>
+                          <span className="text-gray-800 font-medium">{section.title}</span>
+                          {section.description && (
+                            <span className="text-gray-500 text-xs">- {section.description}</span>
+                          )}
+                          {hasSubServices && section.subServiceId && (
+                            <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded text-xs">
+                              {subServices.find(s => s.id === section.subServiceId)?.name}
+                            </span>
+                          )}
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={() => removeSection(section.id)} 
+                          className="text-red-400 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
-
-              <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-2 text-sm text-gray-700">
-                  <input type="checkbox" checked={newField.isRequired} onChange={e => setNewField({ ...newField, isRequired: e.target.checked })} className="rounded" />
-                  <span>Required field</span>
-                </label>
-                <button type="button" onClick={addField}
-                  disabled={!newField.label.trim() || !newField.fieldKey.trim()}
-                  className="bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-sm flex items-center space-x-1">
-                  <Plus className="w-3 h-3" /><span>Add Field</span>
-                </button>
-              </div>
             </div>
+          )}
 
-            {fields.length > 0 && (
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                {fields
-                  .sort((a, b) => (a.order || 0) - (b.order || 0))
-                  .map((f, i) => (
-                  <div key={f.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-mono">
-                          #{f.order || i + 1}
-                        </span>
-                        <span className="text-gray-800">{f.label}</span>
-                        <span className="text-gray-500 text-xs">({f.fieldKey})</span>
-                        {f.sectionId && (
-                          <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                            {sections.find(s => s.id === f.sectionId)?.title || 'Unknown Section'}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{f.type}</span>
-                        {f.isRequired && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs">Required</span>}
-                        <button type="button" onClick={() => removeField(i)} className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
-                      </div>
+          {/* Add Fields */}
+          {(!hasSubServices || selectedSubService) && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                Form Fields ({hasSubServices ? fields.filter(f => f.subServiceId === selectedSubService).length : fields.length})
+                {hasSubServices && selectedSubService && (
+                  <span className="text-purple-600 ml-2">
+                    for {subServices.find(s => s.id === selectedSubService)?.name}
+                  </span>
+                )}
+              </h3>
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={newField.label}
+                    onChange={e => setNewField({ ...newField, label: e.target.value, fieldKey: autoKey(e.target.value) })}
+                    placeholder="Label *"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                  <input value={newField.fieldKey}
+                    onChange={e => setNewField({ ...newField, fieldKey: e.target.value })}
+                    placeholder="Field key *"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                  <input 
+                    type="number"
+                    value={newField.order}
+                    onChange={e => setNewField({ ...newField, order: parseInt(e.target.value) || '' })}
+                    placeholder="Order (e.g. 1)"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <select value={newField.type} onChange={e => setNewField({ ...newField, type: e.target.value, options: e.target.value === 'dropdown' || e.target.value === 'multi_select' ? newField.options : [] })}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <select 
+                    value={newField.sectionId} 
+                    onChange={e => setNewField({ ...newField, sectionId: e.target.value })}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">No Section</option>
+                    {sections
+                      .filter(s => hasSubServices ? s.subServiceId === selectedSubService : true)
+                      .sort((a, b) => (a.order || 0) - (b.order || 0))
+                      .map(section => (
+                      <option key={section.id} value={section.id}>{section.title}</option>
+                    ))}
+                  </select>
+                  <input value={newField.placeholder} onChange={e => setNewField({ ...newField, placeholder: e.target.value })}
+                    placeholder="Placeholder (optional)"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+                {hasSubServices && (
+                  <div>
+                    <select 
+                      value={newField.subServiceId}
+                      onChange={e => setNewField({ ...newField, subServiceId: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Sub-Service *</option>
+                      {subServices.map(subService => (
+                        <option key={subService.id} value={subService.id}>{subService.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-2">
+                  <input
+                    value={newField.helpText}
+                    onChange={e => setNewField({ ...newField, helpText: e.target.value })}
+                    placeholder="Help text (optional)"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {(newField.type === 'dropdown' || newField.type === 'multi_select') && (
+                  <div className="border-t pt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
+                    <div className="flex space-x-2 mb-2">
+                      <input value={newOption} onChange={e => setNewOption(e.target.value)}
+                        placeholder="Add option"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                      <button type="button" onClick={addOption}
+                        disabled={!newOption.trim()}
+                        className="bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-2 rounded-lg text-sm">
+                        Add
+                      </button>
                     </div>
-                    {f.options?.length > 0 && (
-                      <div className="text-xs text-gray-600 mt-1">
-                        Options: {f.options.join(', ')}
-                      </div>
-                    )}
-                    {f.helpText && (
-                      <div className="text-xs text-gray-500 mt-1 italic">
-                        Help: {f.helpText}
+                    {newField.options.length > 0 && (
+                      <div className="space-y-1">
+                        {newField.options.map((option, i) => (
+                          <div key={i} className="flex items-center justify-between bg-white border border-gray-200 rounded px-2 py-1 text-sm">
+                            <span>{option}</span>
+                            <button type="button" onClick={() => removeOption(i)} className="text-red-400 hover:text-red-600">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                ))}
+                )}
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center space-x-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={newField.isRequired} onChange={e => setNewField({ ...newField, isRequired: e.target.checked })} className="rounded" />
+                    <span>Required field</span>
+                  </label>
+                  <button type="button" onClick={addField}
+                    disabled={!newField.label.trim() || !newField.fieldKey.trim() || (hasSubServices && !newField.subServiceId)}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-sm flex items-center space-x-1">
+                    <Plus className="w-3 h-3" /><span>Add Field</span>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+
+              {fields.filter(f => hasSubServices ? f.subServiceId === selectedSubService : true).length > 0 && (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {fields
+                    .filter(f => hasSubServices ? f.subServiceId === selectedSubService : true)
+                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                    .map((f, i) => (
+                    <div key={f.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-mono">
+                            #{f.order || i + 1}
+                          </span>
+                          <span className="text-gray-800">{f.label}</span>
+                          <span className="text-gray-500 text-xs">({f.fieldKey})</span>
+                          {f.sectionId && (
+                            <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
+                              {sections.find(s => s.id === f.sectionId)?.title || 'Unknown Section'}
+                            </span>
+                          )}
+                          {hasSubServices && f.subServiceId && (
+                            <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-xs">
+                              {subServices.find(s => s.id === f.subServiceId)?.name}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{f.type}</span>
+                          {f.isRequired && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs">Required</span>}
+                          <button type="button" onClick={() => removeField(i)} className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
+                        </div>
+                      </div>
+                      {f.options?.length > 0 && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          Options: {f.options.join(', ')}
+                        </div>
+                      )}
+                      {f.helpText && (
+                        <div className="text-xs text-gray-500 mt-1 italic">
+                          Help: {f.helpText}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Form Preview */}
           {(fields.length > 0 || sections.length > 0 || subServices.length > 0) && (
@@ -2042,28 +2283,57 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
                   </div>
                 )}
 
-                {/* Regular form preview */}
-                {sections.length > 0 ? (
-                  // Render by sections
-                  sections
-                    .sort((a, b) => (a.order || 0) - (b.order || 0))
-                    .map(section => {
-                      const sectionFields = fields
-                        .filter(f => f.sectionId === section.id)
-                        .sort((a, b) => (a.order || 0) - (b.order || 0))
-                      
-                      if (sectionFields.length === 0) return null
-                      
-                      return (
-                        <div key={section.id} className="border border-gray-200 rounded-lg p-4">
-                          <div className="border-b border-gray-200 pb-3 mb-4">
-                            <h4 className="text-lg font-semibold text-gray-900">{section.title}</h4>
-                            {section.description && (
-                              <p className="text-sm text-gray-600 mt-1">{section.description}</p>
-                            )}
-                          </div>
-                          <div className="space-y-4">
-                            {sectionFields.map((field) => (
+                {/* Sub-service specific forms preview */}
+                {hasSubServices && subServices.length > 0 ? (
+                  subServices.map(subService => {
+                    const subServiceSections = sections.filter(s => s.subServiceId === subService.id)
+                    const subServiceFields = fields.filter(f => f.subServiceId === subService.id)
+                    
+                    if (subServiceSections.length === 0 && subServiceFields.length === 0) return null
+                    
+                    return (
+                      <div key={subService.id} className="border border-purple-200 rounded-lg p-4 bg-purple-50">
+                        <h4 className="text-md font-semibold text-purple-900 mb-3">
+                          Form for: {subService.name}
+                        </h4>
+                        
+                        {subServiceSections.length > 0 ? (
+                          // Render by sections for this sub-service
+                          subServiceSections
+                            .sort((a, b) => (a.order || 0) - (b.order || 0))
+                            .map(section => {
+                              const sectionFields = subServiceFields
+                                .filter(f => f.sectionId === section.id)
+                                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                              
+                              if (sectionFields.length === 0) return null
+                              
+                              return (
+                                <div key={section.id} className="border border-gray-200 rounded-lg p-4 bg-white mb-3">
+                                  <div className="border-b border-gray-200 pb-3 mb-4">
+                                    <h5 className="text-lg font-semibold text-gray-900">{section.title}</h5>
+                                    {section.description && (
+                                      <p className="text-sm text-gray-600 mt-1">{section.description}</p>
+                                    )}
+                                  </div>
+                                  <div className="space-y-4">
+                                    {sectionFields.map((field) => (
+                                      <div key={field.id} className="space-y-1">
+                                        <label className="block text-sm font-medium text-gray-700">
+                                          {field.label}
+                                          {field.isRequired && <span className="text-red-500 ml-1">*</span>}
+                                        </label>
+                                        {renderFieldPreview(field)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })
+                        ) : (
+                          // Render fields without sections for this sub-service
+                          <div className="space-y-4 bg-white rounded-lg p-4">
+                            {subServiceFields.map((field, index) => (
                               <div key={field.id} className="space-y-1">
                                 <label className="block text-sm font-medium text-gray-700">
                                   {field.label}
@@ -2073,34 +2343,73 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
                               </div>
                             ))}
                           </div>
-                        </div>
-                      )
-                    })
+                        )}
+                        
+                        {/* Fields not assigned to any section for this sub-service */}
+                        {subServiceSections.length > 0 && subServiceFields.filter(f => !f.sectionId).length > 0 && (
+                          <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                            <div className="border-b border-gray-200 pb-3 mb-4">
+                              <h5 className="text-lg font-semibold text-gray-900">Other Fields</h5>
+                              <p className="text-sm text-gray-600 mt-1">Fields not assigned to any section</p>
+                            </div>
+                            <div className="space-y-4">
+                              {subServiceFields
+                                .filter(f => !f.sectionId)
+                                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                                .map((field) => (
+                                <div key={field.id} className="space-y-1">
+                                  <label className="block text-sm font-medium text-gray-700">
+                                    {field.label}
+                                    {field.isRequired && <span className="text-red-500 ml-1">*</span>}
+                                  </label>
+                                  {renderFieldPreview(field)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
                 ) : (
-                  // Render fields without sections (legacy)
-                  fields.map((field, index) => (
-                    <div key={field.id} className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        {field.label}
-                        {field.isRequired && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      {renderFieldPreview(field)}
-                    </div>
-                  ))
-                )}
-                
-                {/* Fields not assigned to any section */}
-                {sections.length > 0 && fields.filter(f => !f.sectionId).length > 0 && (
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <div className="border-b border-gray-200 pb-3 mb-4">
-                      <h4 className="text-lg font-semibold text-gray-900">Other Fields</h4>
-                      <p className="text-sm text-gray-600 mt-1">Fields not assigned to any section</p>
-                    </div>
-                    <div className="space-y-4">
-                      {fields
-                        .filter(f => !f.sectionId)
+                  // Regular form preview (no sub-services)
+                  <>
+                    {sections.length > 0 ? (
+                      // Render by sections
+                      sections
                         .sort((a, b) => (a.order || 0) - (b.order || 0))
-                        .map((field) => (
+                        .map(section => {
+                          const sectionFields = fields
+                            .filter(f => f.sectionId === section.id)
+                            .sort((a, b) => (a.order || 0) - (b.order || 0))
+                          
+                          if (sectionFields.length === 0) return null
+                          
+                          return (
+                            <div key={section.id} className="border border-gray-200 rounded-lg p-4">
+                              <div className="border-b border-gray-200 pb-3 mb-4">
+                                <h4 className="text-lg font-semibold text-gray-900">{section.title}</h4>
+                                {section.description && (
+                                  <p className="text-sm text-gray-600 mt-1">{section.description}</p>
+                                )}
+                              </div>
+                              <div className="space-y-4">
+                                {sectionFields.map((field) => (
+                                  <div key={field.id} className="space-y-1">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      {field.label}
+                                      {field.isRequired && <span className="text-red-500 ml-1">*</span>}
+                                    </label>
+                                    {renderFieldPreview(field)}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })
+                    ) : (
+                      // Render fields without sections (legacy)
+                      fields.map((field, index) => (
                         <div key={field.id} className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">
                             {field.label}
@@ -2108,9 +2417,33 @@ const CreateFormModal = ({ categories, forms, onClose, onSave }) => {
                           </label>
                           {renderFieldPreview(field)}
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                      ))
+                    )}
+                    
+                    {/* Fields not assigned to any section */}
+                    {sections.length > 0 && fields.filter(f => !f.sectionId).length > 0 && (
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <div className="border-b border-gray-200 pb-3 mb-4">
+                          <h4 className="text-lg font-semibold text-gray-900">Other Fields</h4>
+                          <p className="text-sm text-gray-600 mt-1">Fields not assigned to any section</p>
+                        </div>
+                        <div className="space-y-4">
+                          {fields
+                            .filter(f => !f.sectionId)
+                            .sort((a, b) => (a.order || 0) - (b.order || 0))
+                            .map((field) => (
+                            <div key={field.id} className="space-y-1">
+                              <label className="block text-sm font-medium text-gray-700">
+                                {field.label}
+                                {field.isRequired && <span className="text-red-500 ml-1">*</span>}
+                              </label>
+                              {renderFieldPreview(field)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
